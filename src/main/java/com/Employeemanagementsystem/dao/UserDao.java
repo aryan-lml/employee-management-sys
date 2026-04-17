@@ -4,7 +4,7 @@ import com.Employeemanagementsystem.config.DBConfig;
 import com.Employeemanagementsystem.model.User;
 
 import java.sql.*;
-import org.mindrot.jbcrypt.BCrypt;
+import com.Employeemanagementsystem.util.PasswordUtils;
 
 public class UserDao {
 
@@ -12,7 +12,7 @@ public class UserDao {
         CREATE TABLE IF NOT EXISTS users (
           id INT AUTO_INCREMENT PRIMARY KEY,
           username VARCHAR(255) NOT NULL UNIQUE,
-          password_hash VARCHAR(255),
+          password_hash VARCHAR(255) DEFAULT NULL,
           role VARCHAR(50) NOT NULL DEFAULT 'user',
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -24,6 +24,12 @@ public class UserDao {
             String sql = CREATE_TABLE_SQL.trim();
             if (sql.endsWith(";")) sql = sql.substring(0, sql.length() - 1);
             st.executeUpdate(sql);
+            // Ensure password_hash column accepts NULL (in case an older schema made it NOT NULL)
+            try {
+                st.executeUpdate("ALTER TABLE users MODIFY password_hash VARCHAR(255) DEFAULT NULL;");
+            } catch (SQLException ignore) {
+                // ignore errors (e.g., insufficient privileges) but continue
+            }
         } catch (SQLException e) {
             System.err.println("[UserDao] Could not ensure users table exists: " + e.getMessage());
         }
@@ -52,7 +58,7 @@ public class UserDao {
         if (plainPassword == null || plainPassword.isBlank()) {
             throw new IllegalArgumentException("Password must be provided and not blank");
         }
-        String hashed = BCrypt.hashpw(plainPassword, BCrypt.gensalt());
+        String hashed = PasswordUtils.hashPassword(plainPassword);
         createUserWithHash(username, hashed, role);
     }
 
@@ -61,7 +67,7 @@ public class UserDao {
         if (username == null || plainPassword == null) return false;
         User u = findByUsername(username);
         if (u == null || u.getPasswordHash() == null) return false;
-        return BCrypt.checkpw(plainPassword, u.getPasswordHash());
+        return PasswordUtils.verifyPassword(plainPassword, u.getPasswordHash());
     }
 
     public User findByUsername(String username) throws SQLException {

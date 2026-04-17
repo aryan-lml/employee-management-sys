@@ -10,7 +10,6 @@ import java.io.IOException;
 import java.sql.SQLException;
 import com.Employeemanagementsystem.dao.UserDao;
 import com.Employeemanagementsystem.model.User;
-import org.mindrot.jbcrypt.BCrypt;
 
 @WebServlet("/auth")
 public class AuthController extends HttpServlet {
