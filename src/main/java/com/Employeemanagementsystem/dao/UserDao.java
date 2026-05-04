@@ -2,11 +2,12 @@ package com.Employeemanagementsystem.dao;
 
 import com.Employeemanagementsystem.config.DBConfig;
 import com.Employeemanagementsystem.model.User;
+import com.Employeemanagementsystem.dao.IUserDao;
 
 import java.sql.*;
 import com.Employeemanagementsystem.util.PasswordUtils;
 
-public class UserDao {
+public class UserDao implements IUserDao {
 
     public static final String CREATE_TABLE_SQL = """
         CREATE TABLE IF NOT EXISTS users (
@@ -51,6 +52,22 @@ public class UserDao {
     }
 
     /**
+     * Create a user using an existing connection (for transactional operations).
+     * Caller manages commit/rollback.
+     */
+    public boolean createUserWithHash(Connection conn, String username, String passwordHash, String role) throws SQLException {
+        String sql = "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)";
+        try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            ps.setString(1, username);
+            if (passwordHash == null) ps.setNull(2, Types.VARCHAR);
+            else ps.setString(2, passwordHash);
+            ps.setString(3, role == null ? "user" : role);
+            int affected = ps.executeUpdate();
+            return affected > 0;
+        }
+    }
+
+    /**
      * Convenience: create a user from a plain password (will be hashed using BCrypt).
      * Throws IllegalArgumentException if password is null/blank to ensure password_hash is always set.
      */
@@ -74,6 +91,48 @@ public class UserDao {
         String sql = "SELECT * FROM users WHERE username = ? LIMIT 1";
         try (Connection conn = DBConfig.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, username);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    User u = new User();
+                    u.setId(rs.getInt("id"));
+                    u.setUsername(rs.getString("username"));
+                    u.setPasswordHash(rs.getString("password_hash"));
+                    u.setRole(rs.getString("role"));
+                    u.setCreatedAt(rs.getTimestamp("created_at"));
+                    return u;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Find user by username using provided connection (transactional context).
+     */
+    public User findByUsername(Connection conn, String username) throws SQLException {
+        String sql = "SELECT * FROM users WHERE username = ? LIMIT 1";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, username);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    User u = new User();
+                    u.setId(rs.getInt("id"));
+                    u.setUsername(rs.getString("username"));
+                    u.setPasswordHash(rs.getString("password_hash"));
+                    u.setRole(rs.getString("role"));
+                    u.setCreatedAt(rs.getTimestamp("created_at"));
+                    return u;
+                }
+            }
+        }
+        return null;
+    }
+
+    @Override
+    public User findById(int id) throws SQLException {
+        String sql = "SELECT * FROM users WHERE id = ? LIMIT 1";
+        try (Connection conn = DBConfig.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, id);
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
                     User u = new User();

@@ -10,6 +10,7 @@ public class Employee {
     private String department;
     private String role;
     private double salary;
+    private Integer userId; // FK to users.id (optional)
     private String status; // Active / Inactive
     private Timestamp createdAt;
     private Timestamp updatedAt;
@@ -24,6 +25,7 @@ public class Employee {
         this.department = department;
         this.role = role;
         this.salary = salary;
+        this.userId = null;
         this.status = status;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
@@ -84,6 +86,14 @@ public class Employee {
 
     public void setSalary(double salary) {
         this.salary = salary;
+    }
+
+    public Integer getUserId() {
+        return userId;
+    }
+
+    public void setUserId(Integer userId) {
+        this.userId = userId;
     }
 
     public String getStatus() {

@@ -1,9 +1,10 @@
 <%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8" %>
 <%@ page import="java.util.List" %>
 <%@ page import="com.Employeemanagementsystem.model.Employee" %>
+<%@ page import="com.Employeemanagementsystem.model.User" %>
 <%
-    String _emsUser = (String) session.getAttribute("user");
-    if (_emsUser == null) {
+    User _user = (User) session.getAttribute("userObj");
+    if (_user == null) {
         response.sendRedirect(request.getContextPath() + "/pages/login.jsp");
         return;
     }
@@ -75,7 +76,7 @@
     <div class="card top-bar">
         <div class="title">Employee Management System</div>
         <div class="spacer"></div>
-        <div style="margin-right:12px;color:#374151">Welcome, <strong><%= _emsUser %></strong></div>
+        <div style="margin-right:12px;color:#374151">Welcome, <strong><%= _user.getUsername() %></strong></div>
         <div>
             <a href="<%=request.getContextPath()%>/logout" style="margin-right:8px; text-decoration:none;"><button class="secondary" type="button">Logout</button></a>
         </div>

@@ -2,6 +2,8 @@ package com.Employeemanagementsystem.controllers;
 
 import com.Employeemanagementsystem.dao.EmployeeDao;
 import com.Employeemanagementsystem.model.Employee;
+import com.Employeemanagementsystem.model.User;
+import com.Employeemanagementsystem.util.AuthUtils;
 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.annotation.WebServlet;
@@ -21,13 +23,13 @@ public class EmployeeController extends HttpServlet {
 
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        String user = (String) req.getSession().getAttribute("user");
-        if (user == null) {
+        User sessionUser = AuthUtils.getUser(req.getSession());
+        if (sessionUser == null) {
             resp.sendRedirect(req.getContextPath() + "/pages/login.jsp");
             return;
         }
         // only admin may access this servlet
-        if (!"admin".equalsIgnoreCase(user)) {
+        if (!AuthUtils.isAdmin(req.getSession())) {
             resp.sendRedirect(req.getContextPath() + "/employee");
             return;
         }
@@ -54,13 +56,13 @@ public class EmployeeController extends HttpServlet {
 
     @Override
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        String user = (String) req.getSession().getAttribute("user");
-        if (user == null) {
+        User sessionUser = AuthUtils.getUser(req.getSession());
+        if (sessionUser == null) {
             resp.sendRedirect(req.getContextPath() + "/pages/login.jsp");
             return;
         }
         // non-admins cannot post to admin endpoints
-        if (!"admin".equalsIgnoreCase(user)) {
+        if (!AuthUtils.isAdmin(req.getSession())) {
             resp.sendRedirect(req.getContextPath() + "/employee");
             return;
         }

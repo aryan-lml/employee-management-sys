@@ -65,9 +65,11 @@ public class AuthController extends HttpServlet {
                     }
                     // create user and hash password inside DAO
                     userDao.createUser(username, password, "user");
-                    req.getSession().setAttribute("user", username);
-                    if ("admin".equalsIgnoreCase(username)) resp.sendRedirect(req.getContextPath() + "/employees");
-                    else resp.sendRedirect(req.getContextPath() + "/employee");
+                    // fetch created user and store full object in session
+                    User created = userDao.findByUsername(username);
+                    req.getSession().setAttribute("userObj", created);
+                    if (created != null && "admin".equalsIgnoreCase(created.getRole())) resp.sendRedirect(req.getContextPath() + "/dashboard");
+                    else resp.sendRedirect(req.getContextPath() + "/employee-dashboard");
                     return;
                 } catch (SQLException se) {
                     throw new ServletException(se);
@@ -86,9 +88,9 @@ public class AuthController extends HttpServlet {
             boolean ok = userDao.validateCredentials(username, password);
             if (ok) {
                 User found = userDao.findByUsername(username);
-                req.getSession().setAttribute("user", username);
-                if (found != null && "admin".equalsIgnoreCase(found.getRole())) resp.sendRedirect(req.getContextPath() + "/employees");
-                else resp.sendRedirect(req.getContextPath() + "/employee");
+                req.getSession().setAttribute("userObj", found);
+                if (found != null && "admin".equalsIgnoreCase(found.getRole())) resp.sendRedirect(req.getContextPath() + "/dashboard");
+                else resp.sendRedirect(req.getContextPath() + "/employee-dashboard");
                 return;
             } else {
                 req.setAttribute("error", "Invalid username or password.");

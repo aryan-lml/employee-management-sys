@@ -2,12 +2,13 @@ package com.Employeemanagementsystem.dao;
 
 import com.Employeemanagementsystem.config.DBConfig;
 import com.Employeemanagementsystem.model.Employee;
+import com.Employeemanagementsystem.dao.IEmployeeDao;
 
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 
-public class EmployeeDao {
+public class EmployeeDao implements IEmployeeDao {
 
     public EmployeeDao() {
         // Ensure the employees table exists. Fail silently but print a helpful message to server logs.
@@ -25,15 +26,18 @@ public class EmployeeDao {
         CREATE TABLE IF NOT EXISTS employees (
             id INT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
-            email VARCHAR(255) NOT NULL,
+            email VARCHAR(191) NOT NULL,
             phone VARCHAR(50),
             department VARCHAR(100),
             role VARCHAR(100),
             salary DOUBLE,
+            user_id INT DEFAULT NULL,
             status VARCHAR(20),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-        ) ENGINE=InnoDB;
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY ux_employees_email (email),
+            CONSTRAINT fk_employees_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         """;
 
     public List<Employee> getAllEmployees(String search, String department, String status) throws SQLException {
@@ -98,7 +102,7 @@ public class EmployeeDao {
     }
 
     public boolean addEmployee(Employee e) throws SQLException {
-        String sql = "INSERT INTO employees (name, email, phone, department, role, salary, status) VALUES (?, ?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO employees (name, email, phone, department, role, salary, user_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection conn = DBConfig.getConnection(); PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setString(1, e.getName());
             ps.setString(2, e.getEmail());
@@ -106,7 +110,9 @@ public class EmployeeDao {
             ps.setString(4, e.getDepartment());
             ps.setString(5, e.getRole());
             ps.setDouble(6, e.getSalary());
-            ps.setString(7, e.getStatus());
+            if (e.getUserId() == null) ps.setNull(7, Types.INTEGER);
+            else ps.setInt(7, e.getUserId());
+            ps.setString(8, e.getStatus());
             int affected = ps.executeUpdate();
             if (affected == 0) return false;
             try (ResultSet keys = ps.getGeneratedKeys()) {
@@ -118,8 +124,32 @@ public class EmployeeDao {
         }
     }
 
+    /**
+     * Add employee using provided connection (transactional operations).
+     */
+    public boolean addEmployee(Connection conn, Employee e) throws SQLException {
+        String sql = "INSERT INTO employees (name, email, phone, department, role, salary, user_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+        try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            ps.setString(1, e.getName());
+            ps.setString(2, e.getEmail());
+            ps.setString(3, e.getPhone());
+            ps.setString(4, e.getDepartment());
+            ps.setString(5, e.getRole());
+            ps.setDouble(6, e.getSalary());
+            if (e.getUserId() == null) ps.setNull(7, Types.INTEGER);
+            else ps.setInt(7, e.getUserId());
+            ps.setString(8, e.getStatus());
+            int affected = ps.executeUpdate();
+            if (affected == 0) return false;
+            try (ResultSet keys = ps.getGeneratedKeys()) {
+                if (keys.next()) e.setId(keys.getInt(1));
+            }
+            return true;
+        }
+    }
+
     public boolean updateEmployee(Employee e) throws SQLException {
-        String sql = "UPDATE employees SET name = ?, email = ?, phone = ?, department = ?, role = ?, salary = ?, status = ? WHERE id = ?";
+        String sql = "UPDATE employees SET name = ?, email = ?, phone = ?, department = ?, role = ?, salary = ?, user_id = ?, status = ? WHERE id = ?";
         try (Connection conn = DBConfig.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, e.getName());
             ps.setString(2, e.getEmail());
@@ -127,8 +157,31 @@ public class EmployeeDao {
             ps.setString(4, e.getDepartment());
             ps.setString(5, e.getRole());
             ps.setDouble(6, e.getSalary());
-            ps.setString(7, e.getStatus());
-            ps.setInt(8, e.getId());
+            if (e.getUserId() == null) ps.setNull(7, Types.INTEGER);
+            else ps.setInt(7, e.getUserId());
+            ps.setString(8, e.getStatus());
+            ps.setInt(9, e.getId());
+            int affected = ps.executeUpdate();
+            return affected > 0;
+        }
+    }
+
+    /**
+     * Update employee using provided connection (transactional context).
+     */
+    public boolean updateEmployee(Connection conn, Employee e) throws SQLException {
+        String sql = "UPDATE employees SET name = ?, email = ?, phone = ?, department = ?, role = ?, salary = ?, user_id = ?, status = ? WHERE id = ?";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, e.getName());
+            ps.setString(2, e.getEmail());
+            ps.setString(3, e.getPhone());
+            ps.setString(4, e.getDepartment());
+            ps.setString(5, e.getRole());
+            ps.setDouble(6, e.getSalary());
+            if (e.getUserId() == null) ps.setNull(7, Types.INTEGER);
+            else ps.setInt(7, e.getUserId());
+            ps.setString(8, e.getStatus());
+            ps.setInt(9, e.getId());
             int affected = ps.executeUpdate();
             return affected > 0;
         }
@@ -152,6 +205,13 @@ public class EmployeeDao {
         e.setDepartment(rs.getString("department"));
         e.setRole(rs.getString("role"));
         e.setSalary(rs.getDouble("salary"));
+        // user_id may be null
+        try {
+            int uid = rs.getInt("user_id");
+            if (!rs.wasNull()) e.setUserId(uid);
+        } catch (SQLException ignore) {
+            // column may not exist in older schema; ignore
+        }
         e.setStatus(rs.getString("status"));
         e.setCreatedAt(rs.getTimestamp("created_at"));
         e.setUpdatedAt(rs.getTimestamp("updated_at"));

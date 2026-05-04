@@ -1,8 +1,9 @@
 <%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8" %>
 <%@ page import="com.Employeemanagementsystem.model.Employee" %>
+<%@ page import="com.Employeemanagementsystem.model.User" %>
 <%
-    String user = (String) session.getAttribute("user");
-    if (user == null) {
+    com.Employeemanagementsystem.model.User userObj = (com.Employeemanagementsystem.model.User) session.getAttribute("userObj");
+    if (userObj == null) {
         response.sendRedirect(request.getContextPath() + "/pages/login.jsp");
         return;
     }
@@ -31,7 +32,7 @@
             <a href="<%=request.getContextPath()%>/logout"><button>Logout</button></a>
         </div>
     </div>
-    <p>Welcome, <strong><%= user %></strong></p>
+    <p>Welcome, <strong><%= userObj.getUsername() %></strong></p>
     <%
         if (emp == null) {
     %>
