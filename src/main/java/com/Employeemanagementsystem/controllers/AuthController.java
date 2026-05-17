@@ -1,5 +1,8 @@
 package com.Employeemanagementsystem.controllers;
 
+import com.Employeemanagementsystem.dao.UserDao;
+import com.Employeemanagementsystem.model.User;
+
 import jakarta.servlet.ServletException;
 import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.HttpServlet;
@@ -8,9 +11,17 @@ import jakarta.servlet.http.HttpServletResponse;
 
 import java.io.IOException;
 import java.sql.SQLException;
-import com.Employeemanagementsystem.dao.UserDao;
-import com.Employeemanagementsystem.model.User;
 
+/**
+ * Authentication endpoint.
+ *
+ * Business rules (per product spec):
+ *   - Anyone who registers becomes an ADMIN with their own multi-tenant scope.
+ *   - Employees never self-register; an admin adds them and the credentials
+ *     are issued to them by the admin (a USER account is created with role=USER).
+ *   - Login is open to both ADMINs (→ /dashboard) and USERs (→ /employee-dashboard).
+ *   - Five failed attempts → 15-minute lockout.
+ */
 @WebServlet("/auth")
 public class AuthController extends HttpServlet {
 
@@ -20,26 +31,12 @@ public class AuthController extends HttpServlet {
     public void init() throws ServletException {
         super.init();
         userDao = new UserDao();
-        // ensure default admin exists
-        try {
-            User admin = userDao.findByUsername("admin");
-            if (admin == null) {
-                userDao.createUser("admin", "admin", "admin");
-            }
-        } catch (Exception e) {
-            throw new ServletException("Failed to initialize user store: " + e.getMessage(), e);
-        }
+        // No seed user — the first person to register becomes the first admin.
     }
 
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        String action = req.getParameter("action");
-        if ("logout".equals(action)) {
-            req.getSession().invalidate();
-            resp.sendRedirect(req.getContextPath() + "/pages/login.jsp");
-            return;
-        }
-        // default: show login page
+        if ("logout".equals(req.getParameter("action"))) req.getSession().invalidate();
         resp.sendRedirect(req.getContextPath() + "/pages/login.jsp");
     }
 
@@ -47,58 +44,79 @@ public class AuthController extends HttpServlet {
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
         String action = req.getParameter("action");
         if (action == null) action = "login";
-
-        if ("register".equals(action)) {
-            String username = req.getParameter("username");
-            String password = req.getParameter("password");
-            if (username == null || username.isBlank() || password == null || password.isBlank()) {
-                req.setAttribute("error", "Username and password are required.");
-                req.getRequestDispatcher("/pages/register.jsp").forward(req, resp);
-                return;
-            }
-                try {
-                    User existing = userDao.findByUsername(username);
-                    if (existing != null) {
-                        req.setAttribute("error", "User already exists.");
-                        req.getRequestDispatcher("/pages/register.jsp").forward(req, resp);
-                        return;
-                    }
-                    // create user and hash password inside DAO
-                    userDao.createUser(username, password, "user");
-                    // fetch created user and store full object in session
-                    User created = userDao.findByUsername(username);
-                    req.getSession().setAttribute("userObj", created);
-                    if (created != null && "admin".equalsIgnoreCase(created.getRole())) resp.sendRedirect(req.getContextPath() + "/dashboard");
-                    else resp.sendRedirect(req.getContextPath() + "/employee-dashboard");
-                    return;
-                } catch (SQLException se) {
-                    throw new ServletException(se);
-                }
-        }
-
-        // login
-        String username = req.getParameter("username");
-        String password = req.getParameter("password");
-        if (username == null || password == null) {
-            req.setAttribute("error", "Invalid credentials.");
-            req.getRequestDispatcher("/pages/login.jsp").forward(req, resp);
-            return;
-        }
         try {
-            boolean ok = userDao.validateCredentials(username, password);
-            if (ok) {
-                User found = userDao.findByUsername(username);
-                req.getSession().setAttribute("userObj", found);
-                if (found != null && "admin".equalsIgnoreCase(found.getRole())) resp.sendRedirect(req.getContextPath() + "/dashboard");
-                else resp.sendRedirect(req.getContextPath() + "/employee-dashboard");
-                return;
-            } else {
-                req.setAttribute("error", "Invalid username or password.");
-                req.getRequestDispatcher("/pages/login.jsp").forward(req, resp);
-                return;
-            }
+            if ("register".equals(action)) handleRegister(req, resp);
+            else handleLogin(req, resp);
         } catch (SQLException se) {
             throw new ServletException(se);
         }
     }
+
+    // -------- Registration (always creates ADMIN) --------
+    private void handleRegister(HttpServletRequest req, HttpServletResponse resp)
+            throws SQLException, ServletException, IOException {
+        String username = trim(req.getParameter("username"));
+        String password = req.getParameter("password");
+
+        if (username == null || username.isBlank() || password == null || password.isBlank()) {
+            failTo(req, resp, "/pages/register.jsp", "Username and password are required.");
+            return;
+        }
+        if (username.length() < 3) {
+            failTo(req, resp, "/pages/register.jsp", "Username must be at least 3 characters.");
+            return;
+        }
+        if (password.length() < 6) {
+            failTo(req, resp, "/pages/register.jsp", "Password must be at least 6 characters.");
+            return;
+        }
+        if (userDao.findByUsername(username) != null) {
+            failTo(req, resp, "/pages/register.jsp", "An account with that username already exists.");
+            return;
+        }
+        // Always ADMIN per spec
+        userDao.createUser(username, password, "ADMIN");
+        User created = userDao.findByUsername(username);
+        req.getSession().setAttribute("userObj", created);
+        resp.sendRedirect(req.getContextPath() + "/dashboard");
+    }
+
+    // -------- Login --------
+    private void handleLogin(HttpServletRequest req, HttpServletResponse resp)
+            throws SQLException, ServletException, IOException {
+        String username = trim(req.getParameter("username"));
+        String password = req.getParameter("password");
+
+        if (username == null || password == null || username.isBlank() || password.isBlank()) {
+            failTo(req, resp, "/pages/login.jsp", "Username and password are required.");
+            return;
+        }
+        if (userDao.isLocked(username)) {
+            failTo(req, resp, "/pages/login.jsp", "Account locked after repeated failures. Try again in 15 minutes.");
+            return;
+        }
+        if (userDao.validateCredentials(username, password)) {
+            User found = userDao.findByUsername(username);
+            userDao.resetFailedAttempts(username);
+            req.getSession().setAttribute("userObj", found);
+            // First-login flow: admin issued the password, user must pick their own.
+            if (found.isMustChangePassword()) {
+                resp.sendRedirect(req.getContextPath() + "/force-password-change");
+                return;
+            }
+            String target = "ADMIN".equalsIgnoreCase(found.getRole()) ? "/dashboard" : "/employee-dashboard";
+            resp.sendRedirect(req.getContextPath() + target);
+            return;
+        }
+        if (userDao.findByUsername(username) != null) userDao.recordFailedAttempt(username);
+        failTo(req, resp, "/pages/login.jsp", "Invalid username or password.");
+    }
+
+    private void failTo(HttpServletRequest req, HttpServletResponse resp, String page, String msg)
+            throws ServletException, IOException {
+        req.setAttribute("error", msg);
+        req.getRequestDispatcher(page).forward(req, resp);
+    }
+
+    private String trim(String s) { return s == null ? null : s.trim(); }
 }

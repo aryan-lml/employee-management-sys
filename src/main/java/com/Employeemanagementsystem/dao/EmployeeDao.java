@@ -2,143 +2,97 @@ package com.Employeemanagementsystem.dao;
 
 import com.Employeemanagementsystem.config.DBConfig;
 import com.Employeemanagementsystem.model.Employee;
-import com.Employeemanagementsystem.dao.IEmployeeDao;
 
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * JDBC-backed employee data access.
+ *
+ * Every employee row is owned by exactly one admin (owner_admin_id).
+ * The DAO refuses to leak data across admins by always filtering on the
+ * ownerAdminId argument the controller supplies. Use {@code null} for
+ * ownerAdminId to perform an unscoped query (only used for the seeded
+ * admin's view, internal lookups by email, or migration utilities).
+ */
 public class EmployeeDao implements IEmployeeDao {
 
     public EmployeeDao() {
-        // Ensure the employees table exists. Fail silently but print a helpful message to server logs.
-        try (Connection conn = DBConfig.getConnection(); Statement st = conn.createStatement()) {
-            String sql = CREATE_TABLE_SQL.trim();
-            if (sql.endsWith(";")) sql = sql.substring(0, sql.length() - 1);
-            st.executeUpdate(sql);
-        } catch (SQLException e) {
-            System.err.println("[EmployeeDao] Could not ensure employees table exists: " + e.getMessage());
-        }
+        // Schema is managed manually — DAO performs no DDL.
     }
 
-    // Create table SQL (for reference)
-    public static final String CREATE_TABLE_SQL = """
-        CREATE TABLE IF NOT EXISTS employees (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            name VARCHAR(255) NOT NULL,
-            email VARCHAR(191) NOT NULL,
-            phone VARCHAR(50),
-            department VARCHAR(100),
-            role VARCHAR(100),
-            salary DOUBLE,
-            user_id INT DEFAULT NULL,
-            status VARCHAR(20),
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            UNIQUE KEY ux_employees_email (email),
-            CONSTRAINT fk_employees_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        """;
-
-    public List<Employee> getAllEmployees(String search, String department, String status) throws SQLException {
+    @Override
+    public List<Employee> getAllEmployees(Integer ownerAdminId, String search, String department, String status)
+            throws SQLException {
         List<Employee> list = new ArrayList<>();
         StringBuilder sql = new StringBuilder("SELECT * FROM employees WHERE 1=1");
         List<Object> params = new ArrayList<>();
 
+        if (ownerAdminId != null) { sql.append(" AND owner_admin_id = ?"); params.add(ownerAdminId); }
         if (search != null && !search.trim().isEmpty()) {
             sql.append(" AND (name LIKE ? OR email LIKE ?)");
             String p = "%" + search.trim() + "%";
-            params.add(p);
-            params.add(p);
+            params.add(p); params.add(p);
         }
         if (department != null && !department.trim().isEmpty()) {
-            sql.append(" AND department = ?");
-            params.add(department.trim());
+            sql.append(" AND department = ?"); params.add(department.trim());
         }
         if (status != null && !status.trim().isEmpty()) {
-            sql.append(" AND status = ?");
-            params.add(status.trim());
+            sql.append(" AND status = ?"); params.add(status.trim());
         }
         sql.append(" ORDER BY id DESC");
 
         try (Connection conn = DBConfig.getConnection(); PreparedStatement ps = conn.prepareStatement(sql.toString())) {
-            for (int i = 0; i < params.size(); i++) {
-                ps.setObject(i + 1, params.get(i));
-            }
+            for (int i = 0; i < params.size(); i++) ps.setObject(i + 1, params.get(i));
             try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    Employee e = mapRow(rs);
-                    list.add(e);
-                }
+                while (rs.next()) list.add(mapRow(rs));
             }
         }
-
         return list;
     }
 
-    public Employee getEmployeeById(int id) throws SQLException {
-        String sql = "SELECT * FROM employees WHERE id = ?";
+    @Override
+    public Employee getEmployeeById(int id, Integer ownerAdminId) throws SQLException {
+        String sql = ownerAdminId == null
+                ? "SELECT * FROM employees WHERE id = ?"
+                : "SELECT * FROM employees WHERE id = ? AND owner_admin_id = ?";
         try (Connection conn = DBConfig.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, id);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) {
-                    return mapRow(rs);
-                }
-            }
+            if (ownerAdminId != null) ps.setInt(2, ownerAdminId);
+            try (ResultSet rs = ps.executeQuery()) { if (rs.next()) return mapRow(rs); }
         }
         return null;
     }
 
+    @Override
     public Employee getEmployeeByEmail(String email) throws SQLException {
         if (email == null || email.isBlank()) return null;
         String sql = "SELECT * FROM employees WHERE email = ? LIMIT 1";
         try (Connection conn = DBConfig.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, email);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) return mapRow(rs);
-            }
+            try (ResultSet rs = ps.executeQuery()) { if (rs.next()) return mapRow(rs); }
         }
         return null;
     }
 
-    public boolean addEmployee(Employee e) throws SQLException {
-        String sql = "INSERT INTO employees (name, email, phone, department, role, salary, user_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-        try (Connection conn = DBConfig.getConnection(); PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
-            ps.setString(1, e.getName());
-            ps.setString(2, e.getEmail());
-            ps.setString(3, e.getPhone());
-            ps.setString(4, e.getDepartment());
-            ps.setString(5, e.getRole());
-            ps.setDouble(6, e.getSalary());
-            if (e.getUserId() == null) ps.setNull(7, Types.INTEGER);
-            else ps.setInt(7, e.getUserId());
-            ps.setString(8, e.getStatus());
-            int affected = ps.executeUpdate();
-            if (affected == 0) return false;
-            try (ResultSet keys = ps.getGeneratedKeys()) {
-                if (keys.next()) {
-                    e.setId(keys.getInt(1));
-                }
-            }
-            return true;
+    @Override
+    public Employee getEmployeeByUserId(int userId) throws SQLException {
+        String sql = "SELECT * FROM employees WHERE user_id = ? LIMIT 1";
+        try (Connection conn = DBConfig.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, userId);
+            try (ResultSet rs = ps.executeQuery()) { if (rs.next()) return mapRow(rs); }
         }
+        return null;
     }
 
-    /**
-     * Add employee using provided connection (transactional operations).
-     */
-    public boolean addEmployee(Connection conn, Employee e) throws SQLException {
-        String sql = "INSERT INTO employees (name, email, phone, department, role, salary, user_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-        try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
-            ps.setString(1, e.getName());
-            ps.setString(2, e.getEmail());
-            ps.setString(3, e.getPhone());
-            ps.setString(4, e.getDepartment());
-            ps.setString(5, e.getRole());
-            ps.setDouble(6, e.getSalary());
-            if (e.getUserId() == null) ps.setNull(7, Types.INTEGER);
-            else ps.setInt(7, e.getUserId());
-            ps.setString(8, e.getStatus());
+    @Override
+    public boolean addEmployee(Employee e) throws SQLException {
+        String sql = "INSERT INTO employees (name, email, phone, department, role, salary, user_id, owner_admin_id, status) " +
+                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        try (Connection conn = DBConfig.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            bindEmployee(ps, e);
             int affected = ps.executeUpdate();
             if (affected == 0) return false;
             try (ResultSet keys = ps.getGeneratedKeys()) {
@@ -148,52 +102,62 @@ public class EmployeeDao implements IEmployeeDao {
         }
     }
 
+    @Override
     public boolean updateEmployee(Employee e) throws SQLException {
-        String sql = "UPDATE employees SET name = ?, email = ?, phone = ?, department = ?, role = ?, salary = ?, user_id = ?, status = ? WHERE id = ?";
+        String sql = "UPDATE employees SET name = ?, email = ?, phone = ?, department = ?, role = ?, salary = ?, " +
+                     "user_id = ?, owner_admin_id = ?, status = ? WHERE id = ?";
         try (Connection conn = DBConfig.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, e.getName());
-            ps.setString(2, e.getEmail());
-            ps.setString(3, e.getPhone());
-            ps.setString(4, e.getDepartment());
-            ps.setString(5, e.getRole());
-            ps.setDouble(6, e.getSalary());
-            if (e.getUserId() == null) ps.setNull(7, Types.INTEGER);
-            else ps.setInt(7, e.getUserId());
-            ps.setString(8, e.getStatus());
-            ps.setInt(9, e.getId());
-            int affected = ps.executeUpdate();
-            return affected > 0;
+            bindEmployee(ps, e);
+            ps.setInt(10, e.getId());
+            return ps.executeUpdate() > 0;
         }
     }
 
-    /**
-     * Update employee using provided connection (transactional context).
-     */
-    public boolean updateEmployee(Connection conn, Employee e) throws SQLException {
-        String sql = "UPDATE employees SET name = ?, email = ?, phone = ?, department = ?, role = ?, salary = ?, user_id = ?, status = ? WHERE id = ?";
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, e.getName());
-            ps.setString(2, e.getEmail());
-            ps.setString(3, e.getPhone());
-            ps.setString(4, e.getDepartment());
-            ps.setString(5, e.getRole());
-            ps.setDouble(6, e.getSalary());
-            if (e.getUserId() == null) ps.setNull(7, Types.INTEGER);
-            else ps.setInt(7, e.getUserId());
-            ps.setString(8, e.getStatus());
-            ps.setInt(9, e.getId());
-            int affected = ps.executeUpdate();
-            return affected > 0;
-        }
-    }
-
-    public boolean deleteEmployee(int id) throws SQLException {
-        String sql = "DELETE FROM employees WHERE id = ?";
+    @Override
+    public boolean deleteEmployee(int id, Integer ownerAdminId) throws SQLException {
+        String sql = ownerAdminId == null
+                ? "DELETE FROM employees WHERE id = ?"
+                : "DELETE FROM employees WHERE id = ? AND owner_admin_id = ?";
         try (Connection conn = DBConfig.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, id);
-            int affected = ps.executeUpdate();
-            return affected > 0;
+            if (ownerAdminId != null) ps.setInt(2, ownerAdminId);
+            return ps.executeUpdate() > 0;
         }
+    }
+
+    /** Transactional variant used by EmployeeService — caller owns the Connection. */
+    public boolean addEmployee(Connection conn, Employee e) throws SQLException {
+        String sql = "INSERT INTO employees (name, email, phone, department, role, salary, user_id, owner_admin_id, status) " +
+                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            bindEmployee(ps, e);
+            if (ps.executeUpdate() == 0) return false;
+            try (ResultSet keys = ps.getGeneratedKeys()) { if (keys.next()) e.setId(keys.getInt(1)); }
+            return true;
+        }
+    }
+
+    /** Link an Employee row to its user account after the account is created. */
+    public void linkUserId(int employeeId, int userId) throws SQLException {
+        try (Connection conn = DBConfig.getConnection();
+             PreparedStatement ps = conn.prepareStatement("UPDATE employees SET user_id = ? WHERE id = ?")) {
+            ps.setInt(1, userId);
+            ps.setInt(2, employeeId);
+            ps.executeUpdate();
+        }
+    }
+
+    // ---- helpers ----
+    private void bindEmployee(PreparedStatement ps, Employee e) throws SQLException {
+        ps.setString(1, e.getName());
+        ps.setString(2, e.getEmail());
+        ps.setString(3, e.getPhone());
+        ps.setString(4, e.getDepartment());
+        ps.setString(5, e.getRole());
+        ps.setDouble(6, e.getSalary());
+        if (e.getUserId() == null) ps.setNull(7, Types.INTEGER); else ps.setInt(7, e.getUserId());
+        if (e.getOwnerAdminId() == null) ps.setNull(8, Types.INTEGER); else ps.setInt(8, e.getOwnerAdminId());
+        ps.setString(9, e.getStatus());
     }
 
     private Employee mapRow(ResultSet rs) throws SQLException {
@@ -205,13 +169,14 @@ public class EmployeeDao implements IEmployeeDao {
         e.setDepartment(rs.getString("department"));
         e.setRole(rs.getString("role"));
         e.setSalary(rs.getDouble("salary"));
-        // user_id may be null
         try {
             int uid = rs.getInt("user_id");
             if (!rs.wasNull()) e.setUserId(uid);
-        } catch (SQLException ignore) {
-            // column may not exist in older schema; ignore
-        }
+        } catch (SQLException ignore) {}
+        try {
+            int oid = rs.getInt("owner_admin_id");
+            if (!rs.wasNull()) e.setOwnerAdminId(oid);
+        } catch (SQLException ignore) {}
         e.setStatus(rs.getString("status"));
         e.setCreatedAt(rs.getTimestamp("created_at"));
         e.setUpdatedAt(rs.getTimestamp("updated_at"));

@@ -11,23 +11,7 @@ import java.util.List;
 public class AttendanceDao implements IAttendanceDao {
 
     public AttendanceDao() {
-        try (Connection conn = DBConfig.getConnection(); Statement st = conn.createStatement()) {
-            String sql = """
-                CREATE TABLE IF NOT EXISTS attendance (
-                  id INT AUTO_INCREMENT PRIMARY KEY,
-                  employee_id INT NOT NULL,
-                  check_in DATETIME NOT NULL,
-                  check_out DATETIME DEFAULT NULL,
-                  status VARCHAR(20) DEFAULT 'PRESENT',
-                  worked_hours DECIMAL(6,2) DEFAULT NULL,
-                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                  CONSTRAINT fk_attendance_employee FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-                """;
-            st.executeUpdate(sql);
-        } catch (SQLException e) {
-            System.err.println("[AttendanceDao] Could not ensure attendance table exists: " + e.getMessage());
-        }
+        // Schema is managed manually — DAO performs no DDL.
     }
 
     @Override

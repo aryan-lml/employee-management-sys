@@ -7,6 +7,7 @@ public class User {
     private String username;
     private String passwordHash;
     private String role; // admin or user
+    private boolean mustChangePassword;
     private Timestamp createdAt;
 
     public User() {}
@@ -19,6 +20,8 @@ public class User {
     public void setPasswordHash(String passwordHash) { this.passwordHash = passwordHash; }
     public String getRole() { return role; }
     public void setRole(String role) { this.role = role; }
+    public boolean isMustChangePassword() { return mustChangePassword; }
+    public void setMustChangePassword(boolean mustChangePassword) { this.mustChangePassword = mustChangePassword; }
     public Timestamp getCreatedAt() { return createdAt; }
     public void setCreatedAt(Timestamp createdAt) { this.createdAt = createdAt; }
 }

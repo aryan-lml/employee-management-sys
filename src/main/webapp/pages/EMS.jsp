@@ -3,191 +3,193 @@
 <%@ page import="com.Employeemanagementsystem.model.Employee" %>
 <%@ page import="com.Employeemanagementsystem.model.User" %>
 <%
+    request.setAttribute("active", "employees");
+    request.setAttribute("pageTitle", "Employees");
     User _user = (User) session.getAttribute("userObj");
-    if (_user == null) {
-        response.sendRedirect(request.getContextPath() + "/pages/login.jsp");
-        return;
-    }
+    String _search     = request.getAttribute("search")     != null ? (String) request.getAttribute("search")     : "";
+    String _department = request.getAttribute("department") != null ? (String) request.getAttribute("department") : "";
+    String _status     = request.getAttribute("status")     != null ? (String) request.getAttribute("status")     : "";
+    String _formError  = (String) request.getAttribute("formError");
 %>
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Employee Management System</title>
+    <title>Employees — EMS</title>
     <link rel="stylesheet" href="<%=request.getContextPath()%>/css/EMS.css">
-    <style>
-        /* Minimal clean styles to complement EMS.css */
-        body { font-family: Arial, Helvetica, sans-serif; background:#f5f7fb; margin:0; padding:20px; }
-        .container { max-width:1200px; margin:0 auto; }
-        .card { background:white; border-radius:10px; box-shadow:0 6px 18px rgba(25,30,50,0.08); padding:20px; margin-bottom:20px; }
-        .top-bar { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
-        .title { font-size:22px; font-weight:600; }
-        .spacer { flex:1; }
-        input[type=text], select, input[type=number], input[type=email] { padding:8px 10px; border:1px solid #e0e6ef; border-radius:8px; }
-        button { background:#2b7cff; color:white; border:none; padding:10px 14px; border-radius:8px; cursor:pointer; }
-        button.secondary { background:#6c757d; }
-        table { width:100%; border-collapse:collapse; margin-top:12px; }
-        th, td { padding:12px 8px; text-align:left; border-bottom:1px solid #eef2f7; }
-        th { background:transparent; color:#4b5563; font-weight:600; }
-        .actions a { margin-right:8px; color:#2b7cff; text-decoration:none; }
-        .modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); align-items:center; justify-content:center; }
-        .modal .dialog { width:520px; max-width:95%; }
-        .form-row { display:flex; gap:10px; }
-        .form-group { flex:1; display:flex; flex-direction:column; margin-bottom:10px; }
-        @media (max-width:600px) {
-            .form-row { flex-direction:column; }
-        }
-    </style>
     <script>
         function openModal(edit) {
-            document.getElementById('employeeModal').style.display = 'flex';
+            document.getElementById('employeeModal').classList.add('open');
             if (!edit) {
                 document.getElementById('employeeForm').reset();
                 document.getElementById('formAction').value = 'add';
                 document.getElementById('idField').value = '';
-                document.getElementById('password').value = '';
+                document.getElementById('modalTitle').textContent = 'Add Employee';
+                document.getElementById('passwordRow').style.display = '';
+                document.getElementById('email').readOnly = false;
             }
         }
-        function closeModal(){document.getElementById('employeeModal').style.display='none';}
-        function editEmployee(e){
-            // populate form and open
+        function closeModal() { document.getElementById('employeeModal').classList.remove('open'); }
+        function editEmployee(e) {
             document.getElementById('formAction').value = 'update';
-            document.getElementById('idField').value = e.getAttribute('data-id');
-            document.getElementById('name').value = e.getAttribute('data-name');
-            document.getElementById('email').value = e.getAttribute('data-email');
-            document.getElementById('password').value = '';
-            document.getElementById('phone').value = e.getAttribute('data-phone');
-            document.getElementById('department').value = e.getAttribute('data-department');
-            document.getElementById('role').value = e.getAttribute('data-role');
-            document.getElementById('salary').value = e.getAttribute('data-salary');
-            document.getElementById('status').value = e.getAttribute('data-status');
-            openModal(true);
+            document.getElementById('idField').value = e.dataset.id;
+            document.getElementById('name').value = e.dataset.name || '';
+            document.getElementById('email').value = e.dataset.email || '';
+            document.getElementById('email').readOnly = true;
+            document.getElementById('phone').value = e.dataset.phone || '';
+            document.getElementById('department').value = e.dataset.department || '';
+            document.getElementById('role').value = e.dataset.role || '';
+            document.getElementById('salary').value = e.dataset.salary || '';
+            document.getElementById('status').value = e.dataset.status || 'Active';
+            document.getElementById('modalTitle').textContent = 'Edit Employee';
+            document.getElementById('passwordRow').style.display = 'none';
+            document.getElementById('employeeModal').classList.add('open');
         }
-        function confirmDelete(id){
-            if (confirm('Are you sure you want to delete this employee?')){
+        function confirmDelete(id, name) {
+            if (confirm('Delete employee "' + name + '"? This cannot be undone.')) {
                 window.location = '<%=request.getContextPath()%>/employees?action=delete&id=' + id;
             }
         }
     </script>
 </head>
 <body>
-<div class="container">
-    <div class="card top-bar">
-        <div class="title">Employee Management System</div>
-        <div class="spacer"></div>
-        <div style="margin-right:12px;color:#374151">Welcome, <strong><%= _user.getUsername() %></strong></div>
-        <div>
-            <a href="<%=request.getContextPath()%>/logout" style="margin-right:8px; text-decoration:none;"><button class="secondary" type="button">Logout</button></a>
-        </div>
-        <form method="get" action="<%=request.getContextPath()%>/employees" style="display:flex; gap:8px; align-items:center;">
-            <input type="text" name="search" placeholder="Search name or email" value="<%= request.getAttribute("search") != null ? request.getAttribute("search") : "" %>">
-            <select name="department">
-                <option value="">All Departments</option>
-                <option value="HR" <%= "HR".equals(request.getAttribute("department"))?"selected":"" %>>HR</option>
-                <option value="Engineering" <%= "Engineering".equals(request.getAttribute("department"))?"selected":"" %>>Engineering</option>
-                <option value="Sales" <%= "Sales".equals(request.getAttribute("department"))?"selected":"" %>>Sales</option>
-                <option value="Finance" <%= "Finance".equals(request.getAttribute("department"))?"selected":"" %>>Finance</option>
-            </select>
-            <select name="status">
-                <option value="">Any Status</option>
-                <option value="Active" <%= "Active".equals(request.getAttribute("status"))?"selected":"" %>>Active</option>
-                <option value="Inactive" <%= "Inactive".equals(request.getAttribute("status"))?"selected":"" %>>Inactive</option>
-            </select>
-            <button type="submit">Search</button>
-        </form>
-        <div style="margin-left:12px;">
-            <button onclick="openModal(false)">+ Add Employee</button>
-        </div>
-    </div>
+<div class="app">
+    <jsp:include page="/pages/layout/sidebar.jsp" />
+    <jsp:include page="/pages/layout/topbar.jsp" />
+    <main class="main">
+        <% if (_formError != null) { %>
+            <div class="alert alert-error"><%= _formError %></div>
+        <% } %>
 
-    <div class="card">
-        <table>
-            <thead>
-            <tr>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Phone</th>
-                <th>Department</th>
-                <th>Role</th>
-                <th>Salary</th>
-                <th>Status</th>
-                <th>Actions</th>
-            </tr>
-            </thead>
-            <tbody>
-            <%
-                List<Employee> employees = (List<Employee>) request.getAttribute("employees");
-                if (employees != null) {
-                    for (Employee emp : employees) {
-            %>
-            <tr>
-                <td><%= emp.getName() %></td>
-                <td><%= emp.getEmail() %></td>
-                <td><%= emp.getPhone() %></td>
-                <td><%= emp.getDepartment() %></td>
-                <td><%= emp.getRole() %></td>
-                <td><%= emp.getSalary() %></td>
-                <td><%= emp.getStatus() %></td>
-                <td class="actions">
-                    <a href="#" onclick="editEmployee(this); return false;"
-                       data-id="<%=emp.getId()%>" data-name="<%=emp.getName()%>" data-email="<%=emp.getEmail()%>"
-                       data-phone="<%=emp.getPhone()%>" data-department="<%=emp.getDepartment()%>" data-role="<%=emp.getRole()%>"
-                       data-salary="<%=emp.getSalary()%>" data-status="<%=emp.getStatus()%>">Edit</a>
-                    <a href="#" onclick="confirmDelete(<%=emp.getId()%>)">Delete</a>
-                </td>
-            </tr>
-            <%
-                    }
-                } else {
-            %>
-            <tr><td colspan="8">No employees found.</td></tr>
-            <%
-                }
-            %>
-            </tbody>
-        </table>
-    </div>
+        <div class="card">
+            <div class="card-header">
+                <div>
+                    <h2 class="mb-0">Employees</h2>
+                    <div class="text-muted">Employees you manage. Adding a password issues login credentials to the employee.</div>
+                </div>
+                <button class="btn" onclick="openModal(false)">+ Add Employee</button>
+            </div>
 
-    <!-- Modal / Form -->
-    <div id="employeeModal" class="modal" onclick="if(event.target==this) closeModal();">
-        <div class="dialog card">
-            <h3 id="modalTitle">Employee</h3>
-            <form id="employeeForm" method="post" action="<%=request.getContextPath()%>/employees">
-                <input type="hidden" id="formAction" name="action" value="add">
-                <input type="hidden" id="idField" name="id" value="">
-                <div class="form-row">
-                    <div class="form-group"><label>Name</label><input id="name" name="name" type="text" required></div>
-                    <div class="form-group"><label>Email</label><input id="email" name="email" type="email" required></div>
-                    <div class="form-group"><label>Password (optional)</label><input id="password" name="password" type="password" placeholder="set user password"></div>
+            <form method="get" action="<%=request.getContextPath()%>/employees" class="form-inline">
+                <div class="form-group">
+                    <label>Search</label>
+                    <input type="search" name="search" placeholder="Name or email" value="<%= _search %>"/>
                 </div>
-                <div class="form-row">
-                    <div class="form-group"><label>Phone</label><input id="phone" name="phone" type="text"></div>
-                    <div class="form-group"><label>Department</label>
-                        <input id="department" name="department" type="text">
-                    </div>
+                <div class="form-group">
+                    <label>Department</label>
+                    <select name="department">
+                        <option value="">All</option>
+                        <% for (String d : new String[]{"HR","Engineering","Sales","Finance","Operations"}) { %>
+                            <option value="<%=d%>" <%= d.equals(_department) ? "selected" : "" %>><%= d %></option>
+                        <% } %>
+                    </select>
                 </div>
-                <div class="form-row">
-                    <div class="form-group"><label>Role</label><input id="role" name="role" type="text"></div>
-                    <div class="form-group"><label>Salary</label><input id="salary" name="salary" type="number" step="0.01"></div>
+                <div class="form-group">
+                    <label>Status</label>
+                    <select name="status">
+                        <option value="">Any</option>
+                        <option value="Active"   <%= "Active".equals(_status)   ? "selected" : "" %>>Active</option>
+                        <option value="Inactive" <%= "Inactive".equals(_status) ? "selected" : "" %>>Inactive</option>
+                    </select>
                 </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Status</label>
-                        <select id="status" name="status">
-                            <option value="Active">Active</option>
-                            <option value="Inactive">Inactive</option>
-                        </select>
-                    </div>
-                </div>
-                <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:10px;">
-                    <button type="button" class="secondary" onclick="closeModal()">Cancel</button>
-                    <button type="submit">Save</button>
+                <div class="form-group">
+                    <label>&nbsp;</label>
+                    <button class="btn btn-secondary" type="submit">Filter</button>
                 </div>
             </form>
         </div>
-    </div>
 
+        <div class="card">
+            <div class="table-wrap">
+                <table class="data">
+                    <thead>
+                        <tr><th>Name</th><th>Email</th><th>Phone</th><th>Department</th><th>Role</th><th>Salary</th><th>Status</th><th>Login</th><th>Actions</th></tr>
+                    </thead>
+                    <tbody>
+                    <%
+                        List<Employee> employees = (List<Employee>) request.getAttribute("employees");
+                        if (employees == null || employees.isEmpty()) {
+                    %>
+                        <tr class="empty-row"><td colspan="9">You have no employees yet. Click "+ Add Employee" to create one.</td></tr>
+                    <%
+                        } else {
+                            for (Employee emp : employees) {
+                                String statusClass = "Active".equalsIgnoreCase(emp.getStatus()) ? "badge-active" : "badge-inactive";
+                    %>
+                        <tr>
+                            <td><strong><%= emp.getName() %></strong></td>
+                            <td><%= emp.getEmail() %></td>
+                            <td><%= emp.getPhone() != null ? emp.getPhone() : "—" %></td>
+                            <td><%= emp.getDepartment() != null ? emp.getDepartment() : "—" %></td>
+                            <td><%= emp.getRole() != null ? emp.getRole() : "—" %></td>
+                            <td><%= String.format("%,.2f", emp.getSalary()) %></td>
+                            <td><span class="badge <%= statusClass %>"><%= emp.getStatus() != null ? emp.getStatus() : "—" %></span></td>
+                            <td><%= emp.getUserId() != null ? "<span class='badge badge-user'>Enabled</span>" : "—" %></td>
+                            <td class="actions-cell">
+                                <button class="btn btn-secondary btn-sm"
+                                        data-id="<%=emp.getId()%>"
+                                        data-name="<%=emp.getName()%>"
+                                        data-email="<%=emp.getEmail()%>"
+                                        data-phone="<%=emp.getPhone() != null ? emp.getPhone() : ""%>"
+                                        data-department="<%=emp.getDepartment() != null ? emp.getDepartment() : ""%>"
+                                        data-role="<%=emp.getRole() != null ? emp.getRole() : ""%>"
+                                        data-salary="<%=emp.getSalary()%>"
+                                        data-status="<%=emp.getStatus() != null ? emp.getStatus() : "Active"%>"
+                                        onclick="editEmployee(this)">Edit</button>
+                                <button class="btn btn-danger btn-sm" onclick="confirmDelete(<%=emp.getId()%>, '<%=emp.getName().replace("'","\\'")%>')">Delete</button>
+                            </td>
+                        </tr>
+                    <% }} %>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <%-- Modal --%>
+        <div id="employeeModal" class="modal-backdrop" onclick="if(event.target===this) closeModal()">
+            <div class="modal">
+                <header>
+                    <h3 id="modalTitle">Add Employee</h3>
+                    <button type="button" class="close" onclick="closeModal()">&times;</button>
+                </header>
+                <form id="employeeForm" method="post" action="<%=request.getContextPath()%>/employees">
+                    <div class="body">
+                        <input type="hidden" id="formAction" name="action" value="add">
+                        <input type="hidden" id="idField" name="id" value="">
+                        <div class="form-grid">
+                            <div class="form-group"><label>Name *</label><input id="name" name="name" type="text" required></div>
+                            <div class="form-group"><label>Email *</label><input id="email" name="email" type="email" required></div>
+                            <div class="form-group" id="passwordRow"><label>Password (creates login)</label><input id="password" name="password" type="password" placeholder="Min 6 chars — optional"></div>
+                            <div class="form-group"><label>Phone</label><input id="phone" name="phone" type="text" placeholder="e.g. 9812345678"></div>
+                            <div class="form-group"><label>Department</label>
+                                <select id="department" name="department">
+                                    <option value="">Select…</option>
+                                    <option value="HR">HR</option>
+                                    <option value="Engineering">Engineering</option>
+                                    <option value="Sales">Sales</option>
+                                    <option value="Finance">Finance</option>
+                                    <option value="Operations">Operations</option>
+                                </select>
+                            </div>
+                            <div class="form-group"><label>Role / Title</label><input id="role" name="role" type="text"></div>
+                            <div class="form-group"><label>Salary</label><input id="salary" name="salary" type="number" step="0.01" min="0"></div>
+                            <div class="form-group"><label>Status</label>
+                                <select id="status" name="status">
+                                    <option value="Active">Active</option>
+                                    <option value="Inactive">Inactive</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="footer">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                        <button type="submit" class="btn">Save</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </main>
 </div>
 </body>
 </html>

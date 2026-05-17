@@ -8,41 +8,28 @@ import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Persistence for the tasks table.
+ * Multi-tenancy: tasks belong to the admin in {@code created_by}.
+ */
 public class TaskDao implements ITaskDao {
 
     public TaskDao() {
-        try (Connection conn = DBConfig.getConnection(); Statement st = conn.createStatement()) {
-            String sql = """
-                CREATE TABLE IF NOT EXISTS tasks (
-                  id INT AUTO_INCREMENT PRIMARY KEY,
-                  title VARCHAR(255) NOT NULL,
-                  description TEXT,
-                  assigned_to INT DEFAULT NULL,
-                  status VARCHAR(20) DEFAULT 'PENDING',
-                  due_date DATE DEFAULT NULL,
-                  created_by INT DEFAULT NULL,
-                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                  CONSTRAINT fk_tasks_employee FOREIGN KEY (assigned_to) REFERENCES employees(id) ON DELETE SET NULL
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-                """;
-            st.executeUpdate(sql);
-        } catch (SQLException e) {
-            System.err.println("[TaskDao] Could not ensure tasks table exists: " + e.getMessage());
-        }
+        // Schema is managed manually — DAO performs no DDL.
     }
 
     @Override
     public Task createTask(Task t) throws SQLException {
         String sql = "INSERT INTO tasks (title, description, assigned_to, status, due_date, created_by) VALUES (?, ?, ?, ?, ?, ?)";
-        try (Connection conn = DBConfig.getConnection(); PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+        try (Connection conn = DBConfig.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setString(1, t.getTitle());
             ps.setString(2, t.getDescription());
             if (t.getAssignedTo() == null) ps.setNull(3, Types.INTEGER); else ps.setInt(3, t.getAssignedTo());
             ps.setString(4, t.getStatus() == null ? TaskStatus.PENDING.name() : t.getStatus().name());
             if (t.getDueDate() == null) ps.setNull(5, Types.DATE); else ps.setDate(5, t.getDueDate());
             if (t.getCreatedBy() == null) ps.setNull(6, Types.INTEGER); else ps.setInt(6, t.getCreatedBy());
-            int affected = ps.executeUpdate();
-            if (affected == 0) return null;
+            if (ps.executeUpdate() == 0) return null;
             try (ResultSet keys = ps.getGeneratedKeys()) { if (keys.next()) t.setId(keys.getInt(1)); }
             return t;
         }
@@ -58,29 +45,36 @@ public class TaskDao implements ITaskDao {
             ps.setString(4, t.getStatus() == null ? TaskStatus.PENDING.name() : t.getStatus().name());
             if (t.getDueDate() == null) ps.setNull(5, Types.DATE); else ps.setDate(5, t.getDueDate());
             ps.setInt(6, t.getId());
-            int affected = ps.executeUpdate();
-            return affected > 0;
+            return ps.executeUpdate() > 0;
         }
     }
 
     @Override
-    public boolean deleteTask(int id) throws SQLException {
-        String sql = "DELETE FROM tasks WHERE id = ?";
+    public boolean deleteTask(int id, Integer ownerAdminId) throws SQLException {
+        String sql = ownerAdminId == null
+                ? "DELETE FROM tasks WHERE id = ?"
+                : "DELETE FROM tasks WHERE id = ? AND created_by = ?";
         try (Connection conn = DBConfig.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, id);
-            int affected = ps.executeUpdate();
-            return affected > 0;
+            if (ownerAdminId != null) ps.setInt(2, ownerAdminId);
+            return ps.executeUpdate() > 0;
         }
     }
 
     @Override
     public Task findById(int id) throws SQLException {
-        String sql = "SELECT * FROM tasks WHERE id = ? LIMIT 1";
+        return findById(id, null);
+    }
+
+    @Override
+    public Task findById(int id, Integer ownerAdminId) throws SQLException {
+        String sql = ownerAdminId == null
+                ? "SELECT * FROM tasks WHERE id = ? LIMIT 1"
+                : "SELECT * FROM tasks WHERE id = ? AND created_by = ? LIMIT 1";
         try (Connection conn = DBConfig.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, id);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) return mapRow(rs);
-            }
+            if (ownerAdminId != null) ps.setInt(2, ownerAdminId);
+            try (ResultSet rs = ps.executeQuery()) { if (rs.next()) return mapRow(rs); }
         }
         return null;
     }
@@ -91,9 +85,18 @@ public class TaskDao implements ITaskDao {
         String sql = "SELECT * FROM tasks WHERE assigned_to = ? ORDER BY due_date ASC";
         try (Connection conn = DBConfig.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, employeeId);
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) list.add(mapRow(rs));
-            }
+            try (ResultSet rs = ps.executeQuery()) { while (rs.next()) list.add(mapRow(rs)); }
+        }
+        return list;
+    }
+
+    @Override
+    public List<Task> findByCreator(int adminId) throws SQLException {
+        List<Task> list = new ArrayList<>();
+        String sql = "SELECT * FROM tasks WHERE created_by = ? ORDER BY due_date ASC";
+        try (Connection conn = DBConfig.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, adminId);
+            try (ResultSet rs = ps.executeQuery()) { while (rs.next()) list.add(mapRow(rs)); }
         }
         return list;
     }
@@ -103,9 +106,7 @@ public class TaskDao implements ITaskDao {
         List<Task> list = new ArrayList<>();
         String sql = "SELECT * FROM tasks ORDER BY due_date ASC";
         try (Connection conn = DBConfig.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) list.add(mapRow(rs));
-            }
+            try (ResultSet rs = ps.executeQuery()) { while (rs.next()) list.add(mapRow(rs)); }
         }
         return list;
     }
@@ -118,7 +119,7 @@ public class TaskDao implements ITaskDao {
         int aid = rs.getInt("assigned_to"); if (!rs.wasNull()) t.setAssignedTo(aid);
         String s = rs.getString("status"); try { t.setStatus(TaskStatus.valueOf(s)); } catch (Exception ex) {}
         t.setDueDate(rs.getDate("due_date"));
-        t.setCreatedBy(rs.getInt("created_by"));
+        int cb = rs.getInt("created_by"); if (!rs.wasNull()) t.setCreatedBy(cb);
         return t;
     }
 }

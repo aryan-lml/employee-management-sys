@@ -11,6 +11,7 @@ public class Employee {
     private String role;
     private double salary;
     private Integer userId; // FK to users.id (optional)
+    private Integer ownerAdminId; // FK to users.id (the admin who owns this employee record)
     private String status; // Active / Inactive
     private Timestamp createdAt;
     private Timestamp updatedAt;
@@ -94,6 +95,14 @@ public class Employee {
 
     public void setUserId(Integer userId) {
         this.userId = userId;
+    }
+
+    public Integer getOwnerAdminId() {
+        return ownerAdminId;
+    }
+
+    public void setOwnerAdminId(Integer ownerAdminId) {
+        this.ownerAdminId = ownerAdminId;
     }
 
     public String getStatus() {
